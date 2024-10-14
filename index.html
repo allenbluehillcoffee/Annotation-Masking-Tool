@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image Annotation</title>
+    <style>
+        #image-container {
+            position: relative;
+        }
+        #image {
+            width: 100%;
+        }
+        .point {
+            width: 10px;
+            height: 10px;
+            background-color: red;
+            border-radius: 50%;
+            position: absolute;
+        }
+    </style>
+</head>
+<body>
+    <h1>Image Annotation Tool</h1>
+
+    <!-- File Upload -->
+    <form id="upload-form" enctype="multipart/form-data">
+        <input type="file" name="file" id="file-input" multiple>
+        <button type="submit">Upload</button>
+    </form>
+
+    <!-- Image display -->
+    <div id="image-container">
+        <img id="image" src="" alt="Image will be displayed here">
+    </div>
+
+    <script>
+        let points = [];
+
+        // Upload Form Handler
+        document.getElementById("upload-form").addEventListener("submit", function(event) {
+            event.preventDefault();
+            const formData = new FormData(this);
+            fetch("/upload", {
+                method: "POST",
+                body: formData,
+            })
+            .then(response => response.json())
+            .then(data => {
+                console.log(data);
+                // Optionally, load the uploaded images here
+            });
+        });
+
+        // Image Click Handler
+        document.getElementById("image").addEventListener("click", function(event) {
+            const rect = this.getBoundingClientRect();
+            const x = event.clientX - rect.left;
+            const y = event.clientY - rect.top;
+
+            points.push({x, y});
+
+            // Display the point on the image
+            const pointDiv = document.createElement("div");
+            pointDiv.classList.add("point");
+            pointDiv.style.left = `${x}px`;
+            pointDiv.style.top = `${y}px`;
+            document.getElementById("image-container").appendChild(pointDiv);
+
+            // Create bounding box after 2 points (you can customize the number)
+            if (points.length === 2) {
+                createBoundingBox(points);
+                points = [];
+            }
+        });
+
+        function createBoundingBox(points) {
+            const minX = Math.min(points[0].x, points[1].x);
+            const minY = Math.min(points[0].y, points[1].y);
+            const maxX = Math.max(points[0].x, points[1].x);
+            const maxY = Math.max(points[0].y, points[1].y);
+
+            const boundingBox = {
+                x: minX,
+                y: minY,
+                width: maxX - minX,
+                height: maxY - minY,
+            };
+
+            console.log(boundingBox);
+
+            // Send the bounding box to the server
+            fetch("/annotate", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify(boundingBox),
+            }).then(response => response.json())
+            .then(data => {
+                console.log("Annotation saved", data);
+            });
+        }
+        
+    </script>
+</body>
+</html>
