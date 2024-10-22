@@ -8,7 +8,7 @@ import runsam2
 class AnnotateHandler(RequestHandler):
     def post(self):
         data = json.loads(self.request.body)
-        bounding_box = data  # The bounding box is received 
+        bounding_box = data  # The bounding box is received fdf
         print(f"Received bounding box: {bounding_box}")
         
         # Here you would pass the bounding box to SAM2 model

@@ -42,7 +42,7 @@ class SaveHandler(tornado.web.RequestHandler):
 
         self.write({"status": "Annotations saved", "saved_annotations": list(annotations.keys())})
 
-# class AnnotationHandler(tornado.web.RequestHandler):
+# class AnnotationHandler(tornado.web.RequestHandler): yes
 
 
 def make_app():
