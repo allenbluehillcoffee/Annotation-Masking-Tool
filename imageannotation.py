@@ -17,6 +17,8 @@ class AnnotateHandler(RequestHandler):
         result = runsam2.run_sam2(bounding_box)
         self.write({"status": "Bounding box processed", "result": result})
 
+
+
 def make_app():
     return tornado.web.Application([
         (r"/", MainHandler),

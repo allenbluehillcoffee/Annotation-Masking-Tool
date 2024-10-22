@@ -8,23 +8,37 @@
         #image-container {
             position: relative;
             margin-top: 20px;
+            max-width: 500px;   /* Maximum width for the image container */
+            max-height: 500px;  /* Maximum height for the image container */
+            border: 1px solid #ccc; /* Optional: Add a border to the image box */
+            overflow: hidden;  /* Ensures the image doesn’t overflow out of the box */
+            display: flex;     /* Use flexbox for centering */
+            justify-content: center; /* Center horizontally */
+            align-items: center;    /* Center vertically */
         }
         #image {
-            width: 100%; /* Ensure it fits the container */
+            display: block;
+            max-width: 100%;
+            max-height: 100%;
+            margin: auto; /* Center the image within the box */
+            object-fit: contain; /* Ensures the image retains its aspect ratio within the container */
         }
+        /* Ensure the file list is constrained and scrollable */
         #file-list {
-            max-height: 150px; /* Set a max height for the scrollable area */
-            overflow-y: auto; /* Enable vertical scrolling */
-            border: 1px solid #ccc; /* Optional: add a border for better visibility */
+            max-height: 150px;   /* Limit the maximum height */
+            overflow-y: scroll;  /* Enable vertical scrolling */
+            border: 1px solid #ccc; /* Optional: border for visibility */
             margin-top: 10px;
             padding: 5px;
+            width: 600px;        /* Optional: set a fixed width */
         }
         .file-item {
-            cursor: pointer; /* Change cursor on hover */
+            cursor: pointer;
             padding: 5px;
+            border-bottom: 1px solid #ddd; /* Optional: separator between items */
         }
         .file-item:hover {
-            background-color: #f0f0f0; /* Highlight on hover */
+            background-color: #f0f0f0;
         }
         .point {
             width: 10px;
@@ -47,15 +61,21 @@
     <!-- Scrollable list for uploaded files -->
     <div id="file-list"></div>
 
+    <!-- Save All Button -->
+    <button id="save-all-btn">Save All Annotated Files</button>
+
     <!-- Image display -->
     <div id="image-container">
         <img id="image" src="" alt="Image will be displayed here">
     </div>
 
     <script>
-        let points = [];
+        let currentFilePath = ''; // To store the current image path
+        const annotations = {}; // To store annotations for each image
         const fileList = document.getElementById("file-list");
         const imageElement = document.getElementById("image");
+        let points = []; // Store points for bounding box
+        let boundingBoxDiv = null; // To hold the bounding box element
 
         // Upload Form Handler
         document.getElementById("upload-form").addEventListener("submit", function(event) {
@@ -74,8 +94,10 @@
                         addFileToList(filePath); // Add each uploaded file path to the list
                     });
                     // Optionally display the first uploaded image
-                    if (!imageElement.src && data.file_paths.length > 0) {
-                        imageElement.src = data.file_paths[0]; // Show the first uploaded image
+                    if (!currentFilePath && data.file_paths.length > 0) {
+                        currentFilePath = data.file_paths[0]; // Show the first uploaded image
+                        imageElement.src = currentFilePath;
+                        annotations[currentFilePath] = []; // Initialize an empty array for annotations
                     }
                 } else {
                     console.error("File upload failed", data);
@@ -92,61 +114,171 @@
             fileItem.textContent = filePath.split('/').pop(); // Display only the file name
 
             fileItem.addEventListener("click", function() {
-                imageElement.src = filePath; // Update the main image to the selected file
+                // Update the main image to the selected file
+                currentFilePath = filePath; 
+                imageElement.src = currentFilePath; 
+                loadAnnotationsForFile(currentFilePath); // Load existing annotations for this image
             });
 
             fileList.appendChild(fileItem);
         }
 
-        // Image Click Handler (remains unchanged)
-        imageElement.addEventListener("click", function(event) {
-            const rect = this.getBoundingClientRect();
-            const x = event.clientX - rect.left;
-            const y = event.clientY - rect.top;
+        // Load annotations for the selected file
+        function loadAnnotationsForFile(filePath) {
+            // Load existing annotations from the annotations object
+            const savedPoints = annotations[filePath] || [];
+            // Clear existing points and bounding boxes from the image container
+            const container = document.getElementById("image-container");
+            container.innerHTML = ''; // Clear previous points and image
+            const img = document.createElement("img");
+            img.id = "image";
+            img.src = filePath;
+            img.style.maxWidth = "100%";
+            img.style.maxHeight = "100%";
+            container.appendChild(img);
 
-            points.push({x, y});
+            // Display previously saved points
+            savedPoints.forEach(point => {
+                const pointDiv = document.createElement("div");
+                pointDiv.classList.add("point");
+                pointDiv.style.left = `${point.x}px`;
+                pointDiv.style.top = `${point.y}px`;
+                container.appendChild(pointDiv);
+            });
 
-            // Display the point on the image
-            const pointDiv = document.createElement("div");
-            pointDiv.classList.add("point");
-            pointDiv.style.left = `${x}px`;
-            pointDiv.style.top = `${y}px`;
-            document.getElementById("image-container").appendChild(pointDiv);
+            // Re-attach click event to image
+            img.addEventListener("click", function(event) {
+                const rect = this.getBoundingClientRect();
+                const x = event.clientX - rect.left;
+                const y = event.clientY - rect.top;
 
-            // Create bounding box after 2 points (you can customize the number)
-            if (points.length === 2) {
-                createBoundingBox(points);
-                points = [];
+                // Store points for the bounding box
+                points.push({ x, y });
+
+                // Display the point on the image
+                const pointDiv = document.createElement("div");
+                pointDiv.classList.add("point");
+                pointDiv.style.left = `${x}px`;
+                pointDiv.style.top = `${y}px`;
+                container.appendChild(pointDiv);
+            });
+        }
+
+        function createBoundingBox() {
+            if (points.length < 2) {
+                alert("Please add at least two points to create a bounding box.");
+                return;
             }
-        });
 
-        function createBoundingBox(points) {
-            const minX = Math.min(points[0].x, points[1].x);
-            const minY = Math.min(points[0].y, points[1].y);
-            const maxX = Math.max(points[0].x, points[1].x);
-            const maxY = Math.max(points[0].y, points[1].y);
+            // Calculate the extrema for the bounding box
+            const minX = Math.min(...points.map(p => p.x));
+            const minY = Math.min(...points.map(p => p.y));
+            const maxX = Math.max(...points.map(p => p.x));
+            const maxY = Math.max(...points.map(p => p.y));
 
-            const boundingBox = {
-                x: minX,
-                y: minY,
-                width: maxX - minX,
-                height: maxY - minY,
-            };
+            // Create or update the bounding box element
+            if (!boundingBoxDiv) {
+                boundingBoxDiv = document.createElement("div");
+                boundingBoxDiv.style.position = "absolute";
+                boundingBoxDiv.style.border = "2px solid blue"; // Change color and style as needed
+                boundingBoxDiv.style.pointerEvents = "none"; // Allow clicks to go through the box
+                document.getElementById("image-container").appendChild(boundingBoxDiv);
+            }
 
-            console.log(boundingBox);
+            // Update bounding box position and size
+            boundingBoxDiv.style.left = `${minX}px`;
+            boundingBoxDiv.style.top = `${minY}px`;
+            boundingBoxDiv.style.width = `${maxX - minX}px`;
+            boundingBoxDiv.style.height = `${maxY - minY}px`;
 
-            // Send the bounding box to the server
-            fetch("/annotate", {
+            // Save the bounding box to annotations
+            annotations[currentFilePath].push({
+                points: [...points],
+                boundingBox: { minX, minY, width: maxX - minX, height: maxY - minY }
+            });
+
+            // Log the bounding box for debugging
+            console.log("Bounding box created:", { minX, minY, width: maxX - minX, height: maxY - minY });
+
+            // Clear points for the next bounding box
+            points = [];
+        }
+
+        // Save all annotated files
+        document.getElementById("save-all-btn").addEventListener("click", function() {
+            if (Object.keys(annotations).length === 0) {
+                alert("No annotations to save");
+                return;
+            }
+
+            // Send a request to save all the annotations
+            fetch("/save_annotations", {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
                 },
-                body: JSON.stringify(boundingBox),
-            }).then(response => response.json())
+                body: JSON.stringify({ annotations: annotations }), // Send annotations object
+            })
+            .then(response => response.json())
             .then(data => {
-                console.log("Annotation saved", data);
+                alert("All annotations saved successfully!");
+            })
+            .catch(error => {
+                console.error("Error saving annotations:", error);
             });
+        });
+
+        // Add the "Create Bounding Box" Button
+        const createBoundingBoxBtn = document.createElement("button");
+        createBoundingBoxBtn.textContent = "Create Bounding Box";
+        createBoundingBoxBtn.addEventListener("click", createBoundingBox);
+        document.body.appendChild(createBoundingBoxBtn);
+
+        // Add the "Clear Points" Button
+        const clearPointsBtn = document.createElement("button");
+        clearPointsBtn.textContent = "Clear Points";
+        clearPointsBtn.addEventListener("click", clearPoints);
+        document.body.appendChild(clearPointsBtn);
+
+        function clearPoints() {
+            // Clear points for the current image and remove visual elements
+            points = []; // Clear the points array
+            const container = document.getElementById("image-container");
+            
+            // Remove existing point markers and bounding box
+            while (container.firstChild) {
+                container.removeChild(container.firstChild);
+            }
+
+            // Re-add the image to the container
+            const img = document.createElement("img");
+            img.id = "image";
+            img.src = currentFilePath; // Use the currently displayed image
+            img.style.maxWidth = "100%";
+            img.style.maxHeight = "100%";
+            container.appendChild(img);
+
+            // Re-attach click event to image
+            img.addEventListener("click", function(event) {
+                const rect = this.getBoundingClientRect();
+                const x = event.clientX - rect.left;
+                const y = event.clientY - rect.top;
+
+                // Store points for the bounding box
+                points.push({ x, y });
+
+                // Display the point on the image
+                const pointDiv = document.createElement("div");
+                pointDiv.classList.add("point");
+                pointDiv.style.left = `${x}px`;
+                pointDiv.style.top = `${y}px`;
+                container.appendChild(pointDiv);
+            });
+
+            // Clear annotations for the current image
+            annotations[currentFilePath] = []; // Clear all points and boxes for this image
         }
+
     </script>
 </body>
 </html>
