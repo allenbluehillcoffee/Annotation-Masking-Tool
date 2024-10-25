@@ -23,33 +23,43 @@ class UploadHandler(tornado.web.RequestHandler):
         
         self.write({"status": "File uploaded", "file_paths": file_paths})
 
-# New handler to save annotated files and annotations
-class SaveHandler(tornado.web.RequestHandler):
+
+class SaveAnnotationsHandler(tornado.web.RequestHandler):
     def post(self):
         data = tornado.escape.json_decode(self.request.body)
-        annotations = data.get('annotations', {})  # Get the annotations dictionary
-        save_dir = "annotated"
+        file_name = data.get("file_name")
+        annotation = data.get("annotation")
 
-        if not os.path.exists(save_dir):
-            os.makedirs(save_dir)
+        if not file_name or not annotation:
+            self.write({"status": "error", "message": "Missing file name or annotation data"})
+            return
 
-        # Save annotations to files
-        for file_name, points in annotations.items():
-            annotation_file = os.path.join(save_dir, f"{os.path.basename(file_name)}_annotations.json")
-            with open(annotation_file, "w") as af:
-                json.dump(points, af)  # Save the points as a JSON file
-                print(f"Saved annotations for {file_name}: {annotation_file}")
+        save_path = "data.json"
 
-        self.write({"status": "Annotations saved", "saved_annotations": list(annotations.keys())})
+        # Load existing data or create new structure
+        if os.path.exists(save_path):
+            with open(save_path, "r") as f:
+                existing_data = json.load(f)
+        else:
+            existing_data = {}
 
-# class AnnotationHandler(tornado.web.RequestHandler): yes
+        # Update or add annotations for the image
+        existing_data[file_name] = {
+            "points": annotation.get("points", []),
+            "boundingBoxes": annotation.get("boundingBoxes", [])
+        }
 
+        # Write the updated data back to the JSON file
+        with open(save_path, "w") as f:
+            json.dump(existing_data, f, indent=4)
+
+        self.write({"status": "success"})
 
 def make_app():
     return tornado.web.Application([
         (r"/", MainHandler),
         (r"/upload", UploadHandler),
-        (r"/save_annotations", SaveHandler),  # New save handler for annotations
+        (r"/save_annotations", SaveAnnotationsHandler),  # New save handler for annotations
         (r"/static/(.*)", tornado.web.StaticFileHandler, {"path": "uploads"}),  # Serve static files
     ])
 

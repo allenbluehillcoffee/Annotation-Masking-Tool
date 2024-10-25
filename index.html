@@ -125,11 +125,17 @@
 
         // Load annotations for the selected file
         function loadAnnotationsForFile(filePath) {
-            // Load existing annotations from the annotations object
-            const savedPoints = annotations[filePath] || [];
-            // Clear existing points and bounding boxes from the image container
+            // Save current file path and initialize annotations if needed
+            currentFilePath = filePath;
+            if (!annotations[currentFilePath]) {
+                annotations[currentFilePath] = { points: [], boundingBoxes: [] };
+            }
+            
+            // Get the container and clear previous elements
             const container = document.getElementById("image-container");
             container.innerHTML = ''; // Clear previous points and image
+
+            // Create a new img element and set its source to the current file
             const img = document.createElement("img");
             img.id = "image";
             img.src = filePath;
@@ -137,32 +143,52 @@
             img.style.maxHeight = "100%";
             container.appendChild(img);
 
-            // Display previously saved points
-            savedPoints.forEach(point => {
-                const pointDiv = document.createElement("div");
-                pointDiv.classList.add("point");
-                pointDiv.style.left = `${point.x}px`;
-                pointDiv.style.top = `${point.y}px`;
-                container.appendChild(pointDiv);
-            });
-
-            // Re-attach click event to image
+            // Add click event to allow point annotations
             img.addEventListener("click", function(event) {
                 const rect = this.getBoundingClientRect();
                 const x = event.clientX - rect.left;
                 const y = event.clientY - rect.top;
 
-                // Store points for the bounding box
+                // Save the point and display it
                 points.push({ x, y });
+                displayPoint(x, y);
+            });
 
-                // Display the point on the image
-                const pointDiv = document.createElement("div");
-                pointDiv.classList.add("point");
-                pointDiv.style.left = `${x}px`;
-                pointDiv.style.top = `${y}px`;
-                container.appendChild(pointDiv);
+            // Display existing points and bounding boxes
+            displayAnnotations(filePath);
+        }
+
+        function displayPoint(x, y) {
+            const pointDiv = document.createElement("div");
+            pointDiv.classList.add("point");
+            pointDiv.style.left = `${x}px`;
+            pointDiv.style.top = `${y}px`;
+            document.getElementById("image-container").appendChild(pointDiv);
+        }
+
+        function displayAnnotations(filePath) {
+            const data = annotations[filePath] || { points: [], boundingBoxes: [] };
+
+            // Display saved points
+            data.points.forEach(point => {
+                displayPoint(point.x, point.y);
+            });
+
+            // Display saved bounding boxes
+            data.boundingBoxes.forEach(box => {
+                const boundingBoxDiv = document.createElement("div");
+                boundingBoxDiv.style.position = "absolute";
+                boundingBoxDiv.style.border = "2px solid blue";
+                boundingBoxDiv.style.left = `${box.minX}px`;
+                boundingBoxDiv.style.top = `${box.minY}px`;
+                boundingBoxDiv.style.width = `${box.width}px`;
+                boundingBoxDiv.style.height = `${box.height}px`;
+                boundingBoxDiv.style.pointerEvents = "none";
+                document.getElementById("image-container").appendChild(boundingBoxDiv);
             });
         }
+
+
 
         function createBoundingBox() {
             if (points.length < 2) {
@@ -170,63 +196,71 @@
                 return;
             }
 
-            // Calculate the extrema for the bounding box
+            // Calculate extrema for the bounding box
             const minX = Math.min(...points.map(p => p.x));
             const minY = Math.min(...points.map(p => p.y));
             const maxX = Math.max(...points.map(p => p.x));
             const maxY = Math.max(...points.map(p => p.y));
 
-            // Create or update the bounding box element
+            // Display the bounding box on the image
             if (!boundingBoxDiv) {
                 boundingBoxDiv = document.createElement("div");
                 boundingBoxDiv.style.position = "absolute";
-                boundingBoxDiv.style.border = "2px solid blue"; // Change color and style as needed
-                boundingBoxDiv.style.pointerEvents = "none"; // Allow clicks to go through the box
+                boundingBoxDiv.style.border = "2px solid blue";
+                boundingBoxDiv.style.pointerEvents = "none";
                 document.getElementById("image-container").appendChild(boundingBoxDiv);
             }
 
-            // Update bounding box position and size
             boundingBoxDiv.style.left = `${minX}px`;
             boundingBoxDiv.style.top = `${minY}px`;
             boundingBoxDiv.style.width = `${maxX - minX}px`;
             boundingBoxDiv.style.height = `${maxY - minY}px`;
 
-            // Save the bounding box to annotations
-            annotations[currentFilePath].push({
-                points: [...points],
-                boundingBox: { minX, minY, width: maxX - minX, height: maxY - minY }
-            });
-
-            // Log the bounding box for debugging
-            console.log("Bounding box created:", { minX, minY, width: maxX - minX, height: maxY - minY });
-
-            // Clear points for the next bounding box
-            points = [];
-        }
-
-        // Save all annotated files
-        document.getElementById("save-all-btn").addEventListener("click", function() {
-            if (Object.keys(annotations).length === 0) {
-                alert("No annotations to save");
-                return;
+            // Initialize annotations for this image if not present
+            if (!annotations[currentFilePath]) {
+                annotations[currentFilePath] = { points: [], boundingBoxes: [] };
             }
 
-            // Send a request to save all the annotations
+            // Save the points and bounding box for the current image in memory
+            annotations[currentFilePath].points = [...points];
+            annotations[currentFilePath].boundingBoxes.push({
+                minX,
+                minY,
+                width: maxX - minX,
+                height: maxY - minY,
+            });
+
+            // Send the annotation for the current image to the backend
+            saveAnnotationForImage(currentFilePath, annotations[currentFilePath]);
+
+            console.log("Bounding box saved:", { minX, minY, width: maxX - minX, height: maxY - minY });
+
+            points = []; // Clear points for the next bounding box
+        }
+
+        function saveAnnotationForImage(filePath, annotationData) {
             fetch("/save_annotations", {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
                 },
-                body: JSON.stringify({ annotations: annotations }), // Send annotations object
+                body: JSON.stringify({
+                    file_name: filePath.split('/').pop(),  // Just the filename, not the full path
+                    annotation: annotationData
+                }),
             })
             .then(response => response.json())
             .then(data => {
-                alert("All annotations saved successfully!");
+                if (data.status === "success") {
+                    console.log("Annotation saved successfully for", filePath);
+                } else {
+                    console.error("Failed to save annotation for", filePath);
+                }
             })
             .catch(error => {
-                console.error("Error saving annotations:", error);
+                console.error("Error saving annotation:", error);
             });
-        });
+        }
 
         // Add the "Create Bounding Box" Button
         const createBoundingBoxBtn = document.createElement("button");
@@ -241,11 +275,10 @@
         document.body.appendChild(clearPointsBtn);
 
         function clearPoints() {
-            // Clear points for the current image and remove visual elements
-            points = []; // Clear the points array
+            points = []; // Clear points array for the bounding box
             const container = document.getElementById("image-container");
-            
-            // Remove existing point markers and bounding box
+
+            // Remove all elements in the image container except the image itself
             while (container.firstChild) {
                 container.removeChild(container.firstChild);
             }
@@ -253,31 +286,38 @@
             // Re-add the image to the container
             const img = document.createElement("img");
             img.id = "image";
-            img.src = currentFilePath; // Use the currently displayed image
+            img.src = currentFilePath;
             img.style.maxWidth = "100%";
             img.style.maxHeight = "100%";
             container.appendChild(img);
 
-            // Re-attach click event to image
-            img.addEventListener("click", function(event) {
-                const rect = this.getBoundingClientRect();
-                const x = event.clientX - rect.left;
-                const y = event.clientY - rect.top;
-
-                // Store points for the bounding box
-                points.push({ x, y });
-
-                // Display the point on the image
-                const pointDiv = document.createElement("div");
-                pointDiv.classList.add("point");
-                pointDiv.style.left = `${x}px`;
-                pointDiv.style.top = `${y}px`;
-                container.appendChild(pointDiv);
-            });
-
-            // Clear annotations for the current image
-            annotations[currentFilePath] = []; // Clear all points and boxes for this image
+            // Clear the points and bounding boxes in the annotations object for this image
+            if (annotations[currentFilePath]) {
+                annotations[currentFilePath].points = [];
+                annotations[currentFilePath].boundingBoxes = [];
+            }
         }
+
+
+        document.getElementById("save-all-btn").addEventListener("click", function() {
+            if (Object.keys(annotations).length === 0) {
+                alert("No annotations to save");
+                return;
+            }
+
+            const dataStr = JSON.stringify(annotations, null, 4);
+            const blob = new Blob([dataStr], { type: "application/json" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = "annotations.json";
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+});
+
+
 
     </script>
 </body>
