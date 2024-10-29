@@ -53,7 +53,7 @@
     <h1>Image Annotation Tool</h1>
 
     <!-- File Upload -->
-    <form id="upload-form" enctype="multipart/form-data">
+    <form id="upload-form" enctype="multipart/form-data" method = "POST" action = "/upload">
         <input type="file" name="file" id="file-input" multiple>
         <button type="submit">Upload</button>
     </form>
@@ -219,8 +219,6 @@
             renderBoundingBox(boundingBox);
             console.log("Bounding box created:", boundingBox);
 
-            runSAM2Mask(boundingBox);
-
             points = []; 
         }
 
@@ -236,34 +234,6 @@
             document.getElementById("image-container").appendChild(boxDiv);
         }
 
-        function runSAM2Mask(boundingBox) {
-            const formData = new FormData();
-            formData.append("filename", currentFilePath.split('/').pop()); // Send only the filename
-            formData.append("bbox_coords", JSON.stringify([
-                [boundingBox.minX, boundingBox.minY, boundingBox.minX + boundingBox.width, boundingBox.minY + boundingBox.height]
-            ]));
-
-            // Send formData to server
-            fetch("/mask_image", {
-                method: "POST",
-                body: formData
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.status === "success") {
-                    // Display the returned mask overlay
-                    const maskImage = new Image();
-                    maskImage.src = data.output_image; // Use the image path from server response
-                    maskImage.style.position = "absolute";
-                    maskImage.style.left = `${boundingBox.minX}px`;
-                    maskImage.style.top = `${boundingBox.minY}px`;
-                    document.getElementById("image-container").appendChild(maskImage);
-                } else {
-                    console.error("Failed to create mask:", data.message);
-                }
-            })
-            .catch(error => console.error("Error running SAM2 mask:", error));
-        }
         
         function saveAnnotationForImage(filePath, annotationData) {
             fetch("/save_annotations", {
@@ -335,6 +305,7 @@
                 return;
             }
 
+            // Download the annotations as JSON file
             const dataStr = JSON.stringify(annotations, null, 4);
             const blob = new Blob([dataStr], { type: "application/json" });
             const url = URL.createObjectURL(blob);
@@ -345,7 +316,27 @@
             a.click();
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
-});
+
+            // Send all annotations to the server
+            fetch("/save_annotations", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({ annotations })  // Send the entire annotations object
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === "success") {
+                    console.log("All annotations saved successfully to the server.");
+                } else {
+                    console.error("Failed to save annotations on the server:", data.message);
+                }
+            })
+            .catch(error => {
+                console.error("Error saving annotations on the server:", error);
+            });
+        });
 
 
 
