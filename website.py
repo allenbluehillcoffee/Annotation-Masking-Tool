@@ -1,8 +1,9 @@
 import os
+import io
 import tornado.ioloop
 import tornado.web
 import torch
-from PIL import Image
+from PIL import Image, ImageDraw
 import numpy as np
 from sam2.build_sam import build_sam2
 from sam2.sam2_image_predictor import SAM2ImagePredictor
@@ -24,7 +25,7 @@ class MaskImageHandler(tornado.web.RequestHandler):
         filename = fileinfo['filename']
         file_body = fileinfo['body']
 
-        # Bounding box coordinates sent from the front-end (multiple boxes in JSON-like format)
+        # Get the bounding box coordinates from a hidden input
         bbox_coords_list = self.get_argument('bbox_coords').split(';')  # Expected format: 'x1,y1,x2,y2;x1,y1,x2,y2;...'
         bboxes = [list(map(int, bbox.split(','))) for bbox in bbox_coords_list]
 
@@ -40,18 +41,15 @@ class MaskImageHandler(tornado.web.RequestHandler):
         print(f"Image dimensions: {image_np.shape}")
         print(f"Bounding box coordinates: {bboxes}")
 
-        # Create a mask overlay for the entire image (same dimensions)
+        # Create a mask overlay for the entire image
         final_mask_overlay = np.zeros_like(image_np)
-
-        # Assuming image_np is the original image
-        image_height, image_width = image_np.shape[:2]
 
         # Loop through each bounding box
         for bbox in bboxes:
             x_min, y_min, x_max, y_max = bbox
 
             # Ensure bounding box is within image dimensions
-            if x_min < 0 or y_min < 0 or x_max > image_width or y_max > image_height:
+            if x_min < 0 or y_min < 0 or x_max > image_np.shape[1] or y_max > image_np.shape[0]:
                 print(f"Skipping invalid bounding box: {x_min, y_min, x_max, y_max}")
                 continue
 
@@ -116,7 +114,7 @@ class DisplayImagesHandler(tornado.web.RequestHandler):
                         border-radius: 5px;
                         box-shadow: 0 2px 5px rgba(0,0,0,0.2);
                     }}
-                    .upload-link {{
+                    .upload-link, .save-link {{
                         display: inline-block;
                         margin-top: 20px;
                         padding: 10px 15px;
@@ -125,20 +123,8 @@ class DisplayImagesHandler(tornado.web.RequestHandler):
                         text-decoration: none;
                         border-radius: 5px;
                     }}
-                    .upload-link:hover {{
+                    .upload-link:hover, .save-link:hover {{
                         background-color: #0056b3;
-                    }}
-                    .save-link {{
-                        display: inline-block;
-                        margin-top: 20px;
-                        padding: 10px 15px;
-                        background-color: #28a745;
-                        color: white;
-                        text-decoration: none;
-                        border-radius: 5px;
-                    }}
-                    .save-link:hover {{
-                        background-color: #218838;
                     }}
                 </style>
             </head>
@@ -215,15 +201,14 @@ class UploadImageHandler(tornado.web.RequestHandler):
                 const imageCanvas = document.getElementById('imageCanvas');
                 const bboxCoordsInput = document.getElementById('bboxCoords');
                 const ctx = imageCanvas.getContext('2d');
-                let image = new Image();
-                let startX, startY, endX, endY;
-                let boundingBoxes = [];
+                let points = [];
 
                 // Load image into canvas when file is selected
                 imageInput.onchange = function(event) {{
                     const file = event.target.files[0];
                     const reader = new FileReader();
                     reader.onload = function(e) {{
+                        const image = new Image();
                         image.src = e.target.result;
                         image.onload = function() {{
                             // Set canvas size to match image dimensions
@@ -236,54 +221,26 @@ class UploadImageHandler(tornado.web.RequestHandler):
                     reader.readAsDataURL(file);
                 }};
 
-                // Restrict drawing within image boundaries
-                imageCanvas.onmousedown = function(e) {{
-                    startX = Math.max(0, Math.min(e.offsetX, imageCanvas.width));  // Clamp to image width
-                    startY = Math.max(0, Math.min(e.offsetY, imageCanvas.height)); // Clamp to image height
-                }};
-
-                // Handle click to add polygon points
+                // Handle mouse clicks to add points
                 imageCanvas.onclick = function(e) {{
                     const x = Math.max(0, Math.min(e.offsetX, imageCanvas.width));  // Clamp to image width
                     const y = Math.max(0, Math.min(e.offsetY, imageCanvas.height)); // Clamp to image height
-
                     points.push({{x: x, y: y}});
-                    
-                    // Draw point and connect lines between points
-                    ctx.fillStyle = 'blue';
-                    ctx.beginPath();
-                    ctx.arc(x, y, 3, 0, 2 * Math.PI);
-                    ctx.fill();
-                    
-                    if (points.length > 1) {{
+
+                    // Draw the current point
+                    ctx.fillStyle = 'red';
+                    ctx.fillRect(x - 3, y - 3, 6, 6);
+
+                    // Draw a bounding box if there are two points
+                    if (points.length === 2) {{
+                        const x1 = points[0].x;
+                        const y1 = points[0].y;
+                        const x2 = points[1].x;
+                        const y2 = points[1].y;
                         ctx.strokeStyle = 'blue';
-                        ctx.lineWidth = 2;
-                        ctx.beginPath();
-                        ctx.moveTo(points[points.length - 2].x, points[points.length - 2].y);
-                        ctx.lineTo(points[points.length - 1].x, points[points.length - 1].y);
-                        ctx.stroke();
-                    }}
-                }};
-
-                // Handle space key press to close the polygon
-                window.onkeydown = function(e) {{
-                    if (e.key === ' ') {{
-                        if (points.length > 2) {{
-                            // Close the polygon by connecting the last point to the first
-                            ctx.strokeStyle = 'red';
-                            ctx.lineWidth = 2;
-                            ctx.beginPath();
-                            ctx.moveTo(points[points.length - 1].x, points[points.length - 1].y);
-                            ctx.lineTo(points[0].x, points[0].y);
-                            ctx.stroke();
-
-                            // Save the polygon points as a string and send it to the server
-                            const polygonCoords = points.map(p => `${{p.x}},${{p.y}}`).join(';');
-                            polygonCoordsInput.value = polygonCoords;
-
-                            // Prevent form submission while space is pressed
-                            e.preventDefault();
-                        }}
+                        ctx.strokeRect(Math.min(x1, x2), Math.min(y1, y2), Math.abs(x2 - x1), Math.abs(y2 - y1));
+                        bboxCoordsInput.value += `${{Math.min(x1, x2)}},${{Math.min(y1, y2)}},${{Math.max(x1, x2)}},${{Math.max(y1, y2)}};`;
+                        points = []; // Reset for next bounding box
                     }}
                 }};
             </script>
@@ -291,49 +248,12 @@ class UploadImageHandler(tornado.web.RequestHandler):
             </html>
         """)
 
-    def post(self):
-        # Get the uploaded image
-        uploaded_file = self.request.files['image'][0]
-        image = Image.open(io.BytesIO(uploaded_file['body']))
-
-        # Get the polygon coordinates from the form
-        polygon_coords = self.get_argument("polygon_coords")
-
-        # Process the polygon coordinates
-        mask_array = self.process_polygon(image, polygon_coords)
-
-        # Save the mask or do further processing here
-        # For example, you might want to save the mask as an image
-        mask_image = Image.fromarray(mask_array * 255)  # Convert to image with 255 for mask
-        mask_image.save("output_mask.png")  # Save mask image
-
-        # Respond back to the user (you can change this as needed)
-        self.write("Image uploaded and mask created successfully!")
-
-    def process_polygon(self, image, polygon_coords):
-        """
-        Process the polygon coordinates and generate a mask.
-        """
-        # Convert the polygon coordinates string into a list of (x, y) tuples
-        points = [tuple(map(int, point.split(','))) for point in polygon_coords.split(';')]
-        
-        # Create a mask image the same size as the original image
-        mask = Image.new('L', image.size, 0)
-        draw = ImageDraw.Draw(mask)
-        
-        # Draw the polygon on the mask
-        draw.polygon(points, outline=1, fill=1)
-        
-        # Convert the mask to a numpy array and return
-        mask_array = np.array(mask)
-        return mask_array
-
 def make_app():
     return tornado.web.Application([
-        (r"/", UploadImageHandler),          # Endpoint for the upload form and drawing bounding boxes
-        (r"/mask", MaskImageHandler),        # Endpoint for processing and masking with bounding box
-        (r"/display", DisplayImagesHandler),  # Endpoint to display masked image
-        (r"/static/(.*)", tornado.web.StaticFileHandler, {"path": SAVE_DIR}),  # Static file handler for images
+        (r"/", UploadImageHandler),
+        (r"/mask", MaskImageHandler),
+        (r"/display", DisplayImagesHandler),
+        (r"/static/(.*)", tornado.web.StaticFileHandler, {'path': SAVE_DIR}),
     ])
 
 if __name__ == "__main__":
