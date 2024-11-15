@@ -8,8 +8,8 @@
         #image-container {
             position: relative;
             margin-top: 20px;
-            width: 50%;
-            height: 50%;       /* Adjust height automatically */
+            width: 600px;
+            height: auto;       /* Adjust height automatically */
             border: 1px solid #ccc;
             display: flex;
             justify-content: center;
@@ -40,8 +40,8 @@
             background-color: #f0f0f0;
         }
         .point {
-            width: 10px;
-            height: 10px;
+            width: 5px;
+            height: 5px;
             background-color: red;
             border-radius: 50%;
             position: absolute;
@@ -129,6 +129,7 @@
             img.src = filePath;
             img.style.maxWidth = "100%";
             img.style.maxHeight = "100%";
+            
             container.appendChild(img);
 
             // Re-display saved points
@@ -153,8 +154,8 @@
 
                 const pointDiv = document.createElement("div");
                 pointDiv.classList.add("point");
-                pointDiv.style.left = `${x}px`;
-                pointDiv.style.top = `${y}px`;
+                pointDiv.style.left = `${x-2.5}px`;
+                pointDiv.style.top = `${y-2.5}px`;
                 container.appendChild(pointDiv);
             });
         }
